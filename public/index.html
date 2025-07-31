@@ -1,0 +1,1639 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Eventos Sociales</title>
+    <!-- Tailwind CSS CDN para estilos rápidos -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+        .card {
+            background-color: #fff;
+            border-radius: 0.75rem; /* rounded-lg */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: background-color 0.2s ease-in-out;
+        }
+        .btn-primary {
+            background-color: #4f46e5; /* indigo-600 */
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background-color: #4338ca; /* indigo-700 */
+        }
+        .btn-secondary {
+            background-color: #6b7280; /* gray-500 */
+            color: #fff;
+        }
+        .btn-secondary:hover {
+            background-color: #4b5563; /* gray-600 */
+        }
+        .input-field {
+            border: 1px solid #d1d5db; /* gray-300 */
+            border-radius: 0.5rem;
+            padding: 0.75rem 1rem;
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+        .event-image {
+            width: 100%;
+            height: 150px; /* Altura fija para las imágenes */
+            object-fit: cover; /* Asegura que la imagen cubra el área sin distorsionarse */
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        /* Estilos para el contenedor del escáner QR */
+        #qr-reader {
+            width: 100%;
+            max-width: 500px; /* Limita el ancho del escáner */
+            margin: auto;
+        }
+        #qr-reader__dashboard {
+            display: none; /* Oculta el dashboard por defecto si solo quieres el video */
+        }
+        #qr-reader video {
+            width: 100% !important;
+            height: auto !important;
+            border-radius: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="container">
+        <header class="bg-indigo-700 text-white p-4 rounded-b-lg shadow-md mb-6">
+            <nav class="flex justify-between items-center">
+                <h1 class="text-3xl font-bold">EventosVIP</h1>
+                <div v-if="isAuthenticated" class="flex items-center space-x-4">
+                    <span class="text-lg">Bienvenido, {{ user.nombre }} ({{ user.rol }})</span>
+                    <button @click="logout" class="btn btn-secondary">Cerrar Sesión</button>
+                </div>
+            </nav>
+        </header>
+
+        <main>
+            <div v-if="!isAuthenticated" class="flex justify-center items-center h-96">
+                <div class="card w-full max-w-md">
+                    <h2 class="text-2xl font-semibold text-center mb-6">Iniciar Sesión</h2>
+                    <form @submit.prevent="login">
+                        <input type="email" v-model="loginForm.correo" placeholder="Correo Electrónico" class="input-field" required>
+                        <input type="password" v-model="loginForm.contrasena" placeholder="Contraseña" class="input-field" required>
+                        <button type="submit" class="btn btn-primary w-full">Entrar</button>
+                        <p v-if="loginError" class="text-red-500 text-center mt-4">{{ loginError }}</p>
+                    </form>
+                    <p class="text-center mt-4 text-gray-600">
+                        ¿No tienes cuenta? <a href="#" @click.prevent="showRegister = true" class="text-indigo-600 hover:underline">Regístrate aquí</a>
+                    </p>
+                </div>
+
+                <div v-if="showRegister" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                    <div class="card w-full max-w-md">
+                        <h2 class="text-2xl font-semibold text-center mb-6">Registrar Nuevo Usuario</h2>
+                        <form @submit.prevent="register">
+                            <input type="text" v-model="registerForm.nombre" placeholder="Nombre Completo" class="input-field" required>
+                            <input type="email" v-model="registerForm.correo" placeholder="Correo Electrónico" class="input-field" required>
+                            <input type="password" v-model="registerForm.contrasena" placeholder="Contraseña" class="input-field" required>
+                            <select v-model="registerForm.rol" class="input-field" required>
+                                <option value="" disabled>Selecciona un Rol</option>
+                                <option value="Asistente">Asistente</option>
+                                <option value="Organizador">Organizador</option>
+                                <option value="Secretaria">Secretaria</option>
+                                <!-- Admin no se registra públicamente -->
+                            </select>
+                            <button type="submit" class="btn btn-primary w-full">Registrar</button>
+                            <p v-if="registerError" class="text-red-500 text-center mt-4">{{ registerError }}</p>
+                            <button @click="showRegister = false" class="btn btn-secondary w-full mt-4">Cancelar</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div v-else>
+                <!-- Contenido principal de la aplicación cuando el usuario está autenticado -->
+                <h2 class="text-2xl font-bold mb-4">Dashboard</h2>
+
+                <!-- Componente para Eventos -->
+                <div class="card">
+                    <h3 class="text-xl font-semibold mb-4">Eventos</h3>
+                    <button v-if="user.rol === 'Organizador' || user.rol === 'Administrador'" @click="showCreateEvent = true" class="btn btn-primary mb-4">Crear Nuevo Evento</button>
+
+                    <div v-if="showCreateEvent" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                        <div class="card w-full max-w-md">
+                            <h2 class="text-2xl font-semibold text-center mb-6">Crear Evento</h2>
+                            <form @submit.prevent="createEvent">
+                                <input type="text" v-model="eventForm.nombre" placeholder="Nombre del Evento" class="input-field" required>
+                                <input type="date" v-model="eventForm.fecha" class="input-field" required>
+                                <input type="time" v-model="eventForm.hora" class="input-field" required>
+                                <input type="text" v-model="eventForm.ubicacion" placeholder="Ubicación" class="input-field" required>
+                                <textarea v-model="eventForm.descripcion" placeholder="Descripción" class="input-field"></textarea>
+                                <select v-model="eventForm.estado" class="input-field" required>
+                                    <option value="pendiente">Pendiente</option>
+                                    <option value="activo">Activo</option>
+                                    <option value="cancelado">Cancelado</option>
+                                    <option value="finalizado">Finalizado</option>
+                                </select>
+                                <input type="text" v-model="eventForm.imagenes" placeholder="URLs de Imágenes (separadas por coma)" class="input-field">
+                                <button type="submit" class="btn btn-primary w-full">Crear Evento</button>
+                                <p v-if="eventError" class="text-red-500 text-center mt-4">{{ eventError }}</p>
+                                <button @click="showCreateEvent = false" class="btn btn-secondary w-full mt-4">Cancelar</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <ul class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <li v-for="event in events" :key="event.idEvento" class="card">
+                            <h4 class="text-lg font-bold">{{ event.nombre }}</h4>
+                            <p class="text-gray-700">Fecha: {{ formatDate(event.fecha) }} Hora: {{ event.hora }}</p>
+                            <p class="text-gray-700">Ubicación: {{ event.ubicacion }}</p>
+                            <p class="text-gray-600 text-sm">Estado: {{ event.estado }}</p>
+                            <p class="text-gray-600 text-sm" v-if="event.organizador">Organizador: {{ event.organizador.nombre }}</p>
+                            <!-- MODIFICADO: Mostrar el costo del evento (precio mínimo del ticket) con una verificación más robusta -->
+                            <p class="text-gray-700">Costo desde: ${{ typeof event.tickets_min_precio === 'number' ? event.tickets_min_precio.toFixed(2) : 'N/A' }}</p>
+                            <div v-if="event.imagenes && event.imagenes.length > 0" class="mt-4">
+                                <img v-for="(image, index) in event.imagenes" :key="index" :src="image" :alt="'Imagen del evento ' + event.nombre" class="event-image">
+                            </div>
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                <button v-if="user.idUsuario === event.idOrganizador || user.rol === 'Administrador'" @click="editEvent(event)" class="btn btn-primary btn-sm">Editar</button>
+                                <button v-if="user.idUsuario === event.idOrganizador || user.rol === 'Administrador'" @click="deleteEvent(event.idEvento)" class="btn btn-secondary btn-sm">Eliminar</button>
+                                <button v-if="(user.idUsuario === event.idOrganizador || user.rol === 'Administrador') && event.estado === 'pendiente'" @click="updateEventStatus(event.idEvento, 'publicar')" class="btn btn-primary btn-sm">Publicar</button>
+                                <button v-if="(user.idUsuario === event.idOrganizador || user.rol === 'Administrador') && event.estado === 'activo'" @click="updateEventStatus(event.idEvento, 'ocultar')" class="btn btn-secondary btn-sm">Ocultar</button>
+                                <button v-if="(user.idUsuario === event.idOrganizador || user.rol === 'Administrador') && event.estado !== 'cancelado'" @click="updateEventStatus(event.idEvento, 'cancelar')" class="btn btn-secondary btn-sm">Cancelar</button>
+                                <button v-if="user.rol === 'Asistente'" @click="showBuyTicketForm(event)" class="btn btn-primary btn-sm">Comprar Ticket</button>
+                                <button v-if="user.rol === 'Organizador' || user.rol === 'Secretaria' || user.rol === 'Administrador'" @click="viewEventAttendees(event.idEvento)" class="btn btn-primary btn-sm">Ver Asistentes</button>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Formulario de edición de evento (modal) -->
+                <div v-if="showEditEvent" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                    <div class="card w-full max-w-md">
+                        <h2 class="text-2xl font-semibold text-center mb-6">Editar Evento</h2>
+                        <form @submit.prevent="saveEventEdit">
+                            <input type="text" v-model="currentEvent.nombre" placeholder="Nombre del Evento" class="input-field" required>
+                            <input type="date" v-model="currentEvent.fecha" class="input-field" required>
+                            <input type="time" v-model="currentEvent.hora" class="input-field" required>
+                            <input type="text" v-model="currentEvent.ubicacion" placeholder="Ubicación" class="input-field" required>
+                            <textarea v-model="currentEvent.descripcion" placeholder="Descripción" class="input-field"></textarea>
+                            <select v-model="currentEvent.estado" class="input-field" required>
+                                <option value="pendiente">Pendiente</option>
+                                <option value="activo">Activo</option>
+                                <option value="cancelado">Cancelado</option>
+                                <option value="finalizado">Finalizado</option>
+                            </select>
+                            <input type="text" v-model="currentEvent.imagenes" placeholder="URLs de Imágenes (separadas por coma)" class="input-field">
+                            <button type="submit" class="btn btn-primary w-full">Guardar Cambios</button>
+                            <p v-if="eventError" class="text-red-500 text-center mt-4">{{ eventError }}</p>
+                            <button @click="showEditEvent = false" class="btn btn-secondary w-full mt-4">Cancelar</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Formulario de compra de ticket (modal) -->
+                <div v-if="showTicketForm" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                    <div class="card w-full max-w-md">
+                        <h2 class="text-2xl font-semibold text-center mb-6">Comprar Ticket para {{ currentEvent.nombre }}</h2>
+                        <form @submit.prevent="buyTicket">
+                            <input type="text" v-model="ticketForm.tipo" placeholder="Tipo de Ticket (Ej: General, VIP)" class="input-field" required>
+                            <input type="number" v-model="ticketForm.precio" placeholder="Precio" class="input-field" step="0.01" required>
+                            <button type="submit" class="btn btn-primary w-full">Comprar</button>
+                            <p v-if="ticketError" class="text-red-500 text-center mt-4">{{ ticketError }}</p>
+                            <button @click="showTicketForm = false" class="btn btn-secondary w-full mt-4">Cancelar</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Modal para ver asistentes del evento -->
+                <div v-if="showAttendeesModal" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                    <div class="card w-full max-w-md">
+                        <h2 class="text-2xl font-semibold text-center mb-6">Asistentes de {{ currentEvent.nombre }}</h2>
+                        <ul v-if="currentAttendees.length > 0">
+                            <li v-for="attendee in currentAttendees" :key="attendee.idUsuario" class="mb-2 p-2 border rounded flex justify-between items-center">
+                                <span>{{ attendee.nombre }} ({{ attendee.correo }}) - {{ attendee.pivot.confirmacionAsistencia ? 'Confirmado' : 'Pendiente' }}</span>
+                                <!-- Botón para confirmar asistencia, visible para Organizador, Secretaria, Administrador -->
+                                <button v-if="!attendee.pivot.confirmacionAsistencia && (user.rol === 'Organizador' || user.rol === 'Secretaria' || user.rol === 'Administrador')"
+                                        @click="confirmAttendance(currentEvent.idEvento, attendee.idUsuario)"
+                                        class="btn btn-primary btn-sm ml-2">
+                                    Confirmar Asistencia
+                                </button>
+                            </li>
+                        </ul>
+                        <p v-else class="text-center text-gray-600">No hay asistentes registrados para este evento.</p>
+                        <button @click="showAttendeesModal = false" class="btn btn-secondary w-full mt-4">Cerrar</button>
+                    </div>
+                </div>
+
+                <!-- Componente para Gestión de Secretarias (Asignación/Desasignación) -->
+                <div v-if="user.rol === 'Organizador' || user.rol === 'Administrador'" class="card">
+                    <h3 class="text-xl font-semibold mb-4">Gestión de Secretarias (Asignación/Desasignación)</h3>
+                    <div v-if="user.rol === 'Administrador'" class="mb-4">
+                        <h4 class="text-lg font-semibold mb-2">Gestionar Secretarias para Organizador:</h4>
+                        <!-- CAMBIO: Selector para organizadores disponibles -->
+                        <select v-model="organizerIdToManage" class="input-field" required @change="fetchAssignedSecretarias(organizerIdToManage)">
+                            <option value="" disabled>Selecciona un Organizador</option>
+                            <option v-for="org in organizers" :key="org.idUsuario" :value="org.idUsuario">
+                                {{ org.nombre }}
+                            </option>
+                        </select>
+                        <p v-if="organizerIdError" class="text-red-500 text-center mt-2">{{ organizerIdError }}</p>
+                    </div>
+
+                    <div class="flex flex-col md:flex-row gap-4">
+                        <div class="w-full md:w-1/2">
+                            <h4 class="text-lg font-semibold mb-2">Asignar Secretaria</h4>
+                            <!-- CAMBIO: Selector para secretarias disponibles -->
+                            <select v-model="secretariaIdToAssign" class="input-field" required>
+                                <option value="" disabled>Selecciona una Secretaria</option>
+                                <option v-for="sec in secretaries" :key="sec.idUsuario" :value="sec.idUsuario">
+                                    {{ sec.nombre }} (ID: {{ sec.idUsuario }})
+                                </option>
+                            </select>
+                            <button @click="assignSecretaria" class="btn btn-primary w-full">Asignar</button>
+                            <p v-if="secretariaAssignError" class="text-red-500 text-center mt-2">{{ secretariaAssignError }}</p>
+                        </div>
+                        <div class="w-full md:w-1/2">
+                            <h4 class="text-lg font-semibold mb-2">Desasignar Secretaria</h4>
+                            <input type="number" v-model="secretariaIdToUnassign" placeholder="ID de Secretaria" class="input-field">
+                            <button @click="unassignSecretaria" class="btn btn-secondary w-full">Desasignar</button>
+                            <p v-if="secretariaUnassignError" class="text-red-500 text-center mt-2">{{ secretariaUnassignError }}</p>
+                        </div>
+                    </div>
+                    <h4 class="text-lg font-semibold mt-6 mb-2">Secretarias Asignadas</h4>
+                    <ul v-if="assignedSecretarias.length > 0">
+                        <li v-for="sec in assignedSecretarias" :key="sec.idUsuario" class="mb-2 p-2 border rounded">
+                            {{ sec.nombre }} ({{ sec.correo }})
+                        </li>
+                    </ul>
+                    <p v-else class="text-gray-600">No hay secretarias asignadas para el organizador seleccionado (o para ti, si eres organizador).</p>
+                </div>
+
+                <!-- Componente para Gestión de Organizadores (Solo para Administradores) -->
+                <div v-if="user.rol === 'Administrador'" class="card">
+                    <h3 class="text-xl font-semibold mb-4">Gestión de Organizadores</h3>
+                    <button @click="showCreateOrganizer = true" class="btn btn-primary mb-4">Crear Nuevo Organizador</button>
+
+                    <div v-if="showCreateOrganizer" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                        <div class="card w-full max-w-md">
+                            <h2 class="text-2xl font-semibold text-center mb-6">Crear Organizador</h2>
+                            <form @submit.prevent="createOrganizer">
+                                <input type="text" v-model="organizerForm.nombre" placeholder="Nombre Completo" class="input-field" required>
+                                <input type="email" v-model="organizerForm.correo" placeholder="Correo Electrónico" class="input-field" required>
+                                <input type="password" v-model="organizerForm.contrasena" placeholder="Contraseña" class="input-field" required>
+                                <!-- El rol ya está fijo como 'Organizador' en el ref -->
+                                <button type="submit" class="btn btn-primary w-full">Crear Organizador</button>
+                                <p v-if="organizerError" class="text-red-500 text-center mt-4">{{ organizerError }}</p>
+                                <button @click="showCreateOrganizer = false" class="btn btn-secondary w-full mt-4">Cancelar</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div v-if="showEditOrganizer" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                        <div class="card w-full max-w-md">
+                            <h2 class="text-2xl font-semibold text-center mb-6">Editar Organizador</h2>
+                            <form @submit.prevent="saveOrganizerEdit">
+                                <input type="text" v-model="currentOrganizer.nombre" placeholder="Nombre Completo" class="input-field" required>
+                                <input type="email" v-model="currentOrganizer.correo" placeholder="Correo Electrónico" class="input-field" required>
+                                <input type="password" v-model="currentOrganizer.contrasena" placeholder="Nueva Contraseña (opcional)" class="input-field">
+                                <!-- El rol no se edita aquí, se mantiene como 'Organizador' -->
+                                <button type="submit" class="btn btn-primary w-full">Guardar Cambios</button>
+                                <p v-if="organizerError" class="text-red-500 text-center mt-4">{{ organizerError }}</p>
+                                <button @click="showEditOrganizer = false" class="btn btn-secondary w-full mt-4">Cancelar</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <h4 class="text-lg font-semibold mt-6 mb-2">Lista de Organizadores</h4>
+                    <ul v-if="organizers.length > 0">
+                        <li v-for="organizer in organizers" :key="organizer.idUsuario" class="mb-2 p-2 border rounded flex justify-between items-center">
+                            <!-- CAMBIO: Mostrar solo nombre y correo -->
+                            <span>{{ organizer.nombre }} ({{ organizer.correo }})</span>
+                            <div>
+                                <button @click="editOrganizer(organizer)" class="btn btn-primary btn-sm mr-2">Editar</button>
+                                <button @click="deleteOrganizer(organizer.idUsuario)" class="btn btn-secondary btn-sm">Eliminar</button>
+                            </div>
+                        </li>
+                    </ul>
+                    <p v-else class="text-gray-600">No hay organizadores registrados.</p>
+                </div>
+
+                <!-- Nuevo Componente para Gestión de Secretarias (CRUD de Usuarios Secretaria) -->
+                <div v-if="user.rol === 'Administrador'" class="card">
+                    <h3 class="text-xl font-semibold mb-4">Gestión de Secretarias (Usuarios)</h3>
+                    <button @click="showCreateSecretaria = true" class="btn btn-primary mb-4">Crear Nueva Secretaria</button>
+
+                    <div v-if="showCreateSecretaria" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                        <div class="card w-full max-w-md">
+                            <h2 class="text-2xl font-semibold text-center mb-6">Crear Secretaria</h2>
+                            <form @submit.prevent="createSecretaria">
+                                <input type="text" v-model="secretariaForm.nombre" placeholder="Nombre Completo" class="input-field" required>
+                                <input type="email" v-model="secretariaForm.correo" placeholder="Correo Electrónico" class="input-field" required>
+                                <input type="password" v-model="secretariaForm.contrasena" placeholder="Contraseña" class="input-field" required>
+                                <!-- El rol ya está fijo como 'Secretaria' en el ref -->
+                                <button type="submit" class="btn btn-primary w-full">Crear Secretaria</button>
+                                <p v-if="secretariaCrudError" class="text-red-500 text-center mt-4">{{ secretariaCrudError }}</p>
+                                <button @click="showCreateSecretaria = false" class="btn btn-secondary w-full mt-4">Cancelar</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div v-if="showEditSecretaria" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                        <div class="card w-full max-w-md">
+                            <h2 class="text-2xl font-semibold text-center mb-6">Editar Secretaria</h2>
+                            <form @submit.prevent="saveSecretariaEdit">
+                                <input type="text" v-model="currentSecretaria.nombre" placeholder="Nombre Completo" class="input-field" required>
+                                <input type="email" v-model="currentSecretaria.correo" placeholder="Correo Electrónico" class="input-field" required>
+                                <input type="password" v-model="currentSecretaria.contrasena" placeholder="Nueva Contraseña (opcional)" class="input-field">
+                                <!-- El rol no se edita aquí, se mantiene como 'Secretaria' -->
+                                <button type="submit" class="btn btn-primary w-full">Guardar Cambios</button>
+                                <p v-if="secretariaCrudError" class="text-red-500 text-center mt-4">{{ secretariaCrudError }}</p>
+                                <button @click="showEditSecretaria = false" class="btn btn-secondary w-full mt-4">Cancelar</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <h4 class="text-lg font-semibold mt-6 mb-2">Lista de Secretarias</h4>
+                    <ul v-if="secretaries.length > 0">
+                        <li v-for="secretaria in secretaries" :key="secretaria.idUsuario" class="mb-2 p-2 border rounded flex justify-between items-center">
+                            <span>{{ secretaria.nombre }} ({{ secretaria.correo }}) - ID: {{ secretaria.idUsuario }}</span>
+                            <div>
+                                <button @click="editSecretaria(secretaria)" class="btn btn-primary btn-sm mr-2">Editar</button>
+                                <button @click="deleteSecretaria(secretaria.idUsuario)" class="btn btn-secondary btn-sm">Eliminar</button>
+                            </div>
+                        </li>
+                    </ul>
+                    <p v-else class="text-gray-600">No hay secretarias registradas.</p>
+                </div>
+
+                <!-- Nuevo Componente para Gestión de Asistentes (CRUD de Usuarios Asistente) -->
+                <div v-if="user.rol === 'Administrador'" class="card">
+                    <h3 class="text-xl font-semibold mb-4">Gestión de Asistentes</h3>
+                    <button @click="showCreateAttendee = true" class="btn btn-primary mb-4">Crear Nuevo Asistente</button>
+
+                    <div v-if="showCreateAttendee" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                        <div class="card w-full max-w-md">
+                            <h2 class="text-2xl font-semibold text-center mb-6">Crear Asistente</h2>
+                            <form @submit.prevent="createAttendee">
+                                <input type="text" v-model="attendeeForm.nombre" placeholder="Nombre Completo" class="input-field" required>
+                                <input type="email" v-model="attendeeForm.correo" placeholder="Correo Electrónico" class="input-field" required>
+                                <input type="password" v-model="attendeeForm.contrasena" placeholder="Contraseña" class="input-field" required>
+                                <!-- El rol ya está fijo como 'Asistente' en el ref -->
+                                <button type="submit" class="btn btn-primary w-full">Crear Asistente</button>
+                                <p v-if="attendeeCrudError" class="text-red-500 text-center mt-4">{{ attendeeCrudError }}</p>
+                                <button @click="showCreateAttendee = false" class="btn btn-secondary w-full mt-4">Cancelar</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div v-if="showEditAttendee" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                        <div class="card w-full max-w-md">
+                            <h2 class="text-2xl font-semibold text-center mb-6">Editar Asistente</h2>
+                            <form @submit.prevent="saveAttendeeEdit">
+                                <input type="text" v-model="currentAttendee.nombre" placeholder="Nombre Completo" class="input-field" required>
+                                <input type="email" v-model="currentAttendee.correo" placeholder="Correo Electrónico" class="input-field" required>
+                                <input type="password" v-model="currentAttendee.contrasena" placeholder="Nueva Contraseña (opcional)" class="input-field">
+                                <!-- El rol no se edita aquí, se mantiene como 'Asistente' -->
+                                <button type="submit" class="btn btn-primary w-full">Guardar Cambios</button>
+                                <p v-if="attendeeCrudError" class="text-red-500 text-center mt-4">{{ attendeeCrudError }}</p>
+                                <button @click="showEditAttendee = false" class="btn btn-secondary w-full mt-4">Cancelar</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <h4 class="text-lg font-semibold mt-6 mb-2">Lista de Asistentes</h4>
+                    <ul v-if="attendees.length > 0">
+                        <li v-for="attendee in attendees" :key="attendee.idUsuario" class="mb-2 p-2 border rounded flex justify-between items-center">
+                            <span>{{ attendee.nombre }} ({{ attendee.correo }}) - ID: {{ attendee.idUsuario }}</span>
+                            <div>
+                                <button @click="editAttendee(attendee)" class="btn btn-primary btn-sm mr-2">Editar</button>
+                                <button @click="deleteAttendee(attendee.idUsuario)" class="btn btn-secondary btn-sm">Eliminar</button>
+                            </div>
+                        </li>
+                    </ul>
+                    <p v-else class="text-gray-600">No hay asistentes registrados.</p>
+                </div>
+
+                <!-- Nuevo Componente para el Rol de Secretaria -->
+                <div v-if="user.rol === 'Secretaria'" class="card">
+                    <h3 class="text-xl font-semibold mb-4">Funciones de Secretaria</h3>
+                    <button @click="showRegisterAttendeeBySecretaria = true" class="btn btn-primary mb-4 mr-2">Registrar Nuevo Asistente</button>
+                    <button @click="openAddExistingAttendeeModal" class="btn btn-primary mb-4 mr-2">Añadir Asistente Existente a Evento</button>
+                    <button @click="openSendInvitationModal" class="btn btn-primary mb-4 mr-2">Enviar Invitación a Asistente</button>
+                    <button @click="openQrScannerModal" class="btn btn-primary mb-4">Escanear Código QR</button>
+
+
+                    <div v-if="showRegisterAttendeeBySecretaria" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                        <div class="card w-full max-w-md">
+                            <h2 class="text-2xl font-semibold text-center mb-6">Registrar Asistente</h2>
+                            <form @submit.prevent="createAttendeeBySecretaria">
+                                <input type="text" v-model="attendeeForm.nombre" placeholder="Nombre Completo" class="input-field" required>
+                                <input type="email" v-model="attendeeForm.correo" placeholder="Correo Electrónico" class="input-field" required>
+                                <input type="password" v-model="attendeeForm.contrasena" placeholder="Contraseña" class="input-field" required>
+                                <!-- El rol es fijo como 'Asistente' -->
+                                <button type="submit" class="btn btn-primary w-full">Registrar Asistente</button>
+                                <p v-if="attendeeCrudError" class="text-red-500 text-center mt-4">{{ attendeeCrudError }}</p>
+                                <button @click="showRegisterAttendeeBySecretaria = false" class="btn btn-secondary w-full mt-4">Cancelar</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <p class="text-gray-600 mt-4">Desde aquí también puedes gestionar la lista de invitados para los eventos en la sección de "Eventos" arriba.</p>
+                </div>
+
+                <!-- Modal para añadir asistente existente a un evento -->
+                <div v-if="showAddExistingAttendeeToEvent" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                    <div class="card w-full max-w-md">
+                        <h2 class="text-2xl font-semibold text-center mb-6">Añadir Asistente Existente a Evento</h2>
+                        <form @submit.prevent="addExistingAttendeeToEvent">
+                            <label for="selectEventToAddAttendee" class="block text-gray-700 text-sm font-bold mb-2">Seleccionar Evento:</label>
+                            <select id="selectEventToAddAttendee" v-model="addExistingAttendeeForm.idEvento" class="input-field" required>
+                                <option value="" disabled>Selecciona un Evento</option>
+                                <option v-for="event in events" :key="event.idEvento" :value="event.idEvento">
+                                    {{ event.nombre }} ({{ formatDate(event.fecha) }})
+                                </option>
+                            </select>
+
+                            <label for="selectAttendeeToAddToEvent" class="block text-gray-700 text-sm font-bold mb-2">Seleccionar Asistente:</label>
+                            <select id="selectAttendeeToAddToEvent" v-model="addExistingAttendeeForm.idAsistente" class="input-field" required>
+                                <option value="" disabled>Selecciona un Asistente</option>
+                                <option v-for="attendee in attendees.filter(a => a.rol === 'Asistente')" :key="attendee.idUsuario" :value="attendee.idUsuario">
+                                    {{ attendee.nombre }} ({{ attendee.correo }})
+                                </option>
+                            </select>
+
+                            <button type="submit" class="btn btn-primary w-full">Añadir Asistente al Evento</button>
+                            <p v-if="addExistingAttendeeError" class="text-red-500 text-center mt-4">{{ addExistingAttendeeError }}</p>
+                            <button @click="showAddExistingAttendeeToEvent = false" class="btn btn-secondary w-full mt-4">Cancelar</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Modal para enviar invitación a un asistente existente -->
+                <div v-if="showSendInvitationModal" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                    <div class="card w-full max-w-md">
+                        <h2 class="text-2xl font-semibold text-center mb-6">Enviar Invitación a Asistente</h2>
+                        <form @submit.prevent="sendInvitation">
+                            <label for="selectEventForInvitation" class="block text-gray-700 text-sm font-bold mb-2">Seleccionar Evento:</label>
+                            <select id="selectEventForInvitation" v-model="sendInvitationForm.idEvento" class="input-field" required>
+                                <option value="" disabled>Selecciona un Evento</option>
+                                <option v-for="event in events" :key="event.idEvento" :value="event.idEvento">
+                                    {{ event.nombre }} ({{ formatDate(event.fecha) }})
+                                </option>
+                            </select>
+
+                            <label for="selectAttendeeForInvitation" class="block text-gray-700 text-sm font-bold mb-2">Seleccionar Asistente:</label>
+                            <select id="selectAttendeeForInvitation" v-model="sendInvitationForm.idAsistente" class="input-field" required>
+                                <option value="" disabled>Selecciona un Asistente</option>
+                                <option v-for="attendee in attendees.filter(a => a.rol === 'Asistente')" :key="attendee.idUsuario" :value="attendee.idUsuario">
+                                    {{ attendee.nombre }} ({{ attendee.correo }})
+                                </option>
+                            </select>
+
+                            <button type="submit" class="btn btn-primary w-full">Enviar Invitación</button>
+                            <p v-if="sendInvitationError" class="text-red-500 text-center mt-4">{{ sendInvitationError }}</p>
+                            <button @click="showSendInvitationModal = false" class="btn btn-secondary w-full mt-4">Cancelar</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- NUEVO: Componente para Mis Invitaciones (Rol Asistente) -->
+                <div v-if="user.rol === 'Asistente'" class="card">
+                    <h3 class="text-xl font-semibold mb-4">Mis Invitaciones</h3>
+                    <p v-if="invitationError" class="text-red-500 text-center mt-4">{{ invitationError }}</p>
+                    <ul v-if="myInvitations.length > 0">
+                        <li v-for="invitation in myInvitations" :key="invitation.idInvitacion" class="mb-4 p-4 border rounded-lg shadow-sm bg-gray-50">
+                            <h4 class="text-lg font-bold">Evento: {{ invitation.evento ? invitation.evento.nombre : 'N/A' }}</h4>
+                            <p class="text-gray-700">Fecha: {{ invitation.evento ? formatDate(invitation.evento.fecha) : 'N/A' }}</p>
+                            <p class="text-gray-700">Estado RSVP: <span :class="{ 'text-green-600': invitation.estadoRSVP === 'aceptado', 'text-red-600': invitation.estadoRSVP === 'rechazado', 'text-yellow-600': invitation.estadoRSVP === 'pendiente' }">{{ invitation.estadoRSVP }}</span></p>
+                            <div class="mt-3 flex gap-2" v-if="invitation.estadoRSVP === 'pendiente'">
+                                <button @click="acceptInvitation(invitation.idInvitacion)" class="btn btn-primary btn-sm">Aceptar</button>
+                                <button @click="rejectInvitation(invitation.idInvitacion)" class="btn btn-secondary btn-sm">Rechazar</button>
+                            </div>
+                            <p v-else class="text-gray-500 text-sm mt-2">Ya has respondido a esta invitación.</p>
+                        </li>
+                    </ul>
+                    <p v-else class="text-gray-600">No tienes invitaciones pendientes.</p>
+                </div>
+
+                <!-- NUEVO: Componente para Mis Entradas (Rol Asistente) -->
+                <div v-if="user.rol === 'Asistente'" class="card">
+                    <h3 class="text-xl font-semibold mb-4">Mis Entradas</h3>
+                    <p v-if="ticketError" class="text-red-500 text-center mt-4">{{ ticketError }}</p>
+                    <ul v-if="myTickets.length > 0">
+                        <li v-for="ticket in myTickets" :key="ticket.idTicket" class="mb-4 p-4 border rounded-lg shadow-sm bg-gray-50">
+                            <h4 class="text-lg font-bold">Evento: {{ ticket.evento ? ticket.evento.nombre : 'N/A' }}</h4>
+                            <p class="text-gray-700">Tipo: {{ ticket.tipo }}</p>
+                            <p class="text-gray-700">Precio: ${{ ticket.precio }}</p>
+                            <p class="text-gray-700">Código QR: {{ ticket.codigoQR }}</p>
+                            <p class="text-gray-700">Estado: <span :class="{ 'text-red-600': ticket.usado, 'text-green-600': !ticket.usado }">{{ ticket.usado ? 'Usado' : 'Activo' }}</span></p>
+                            <div class="mt-3">
+                                <button @click="openQrCodeModal(ticket.codigoQR)" class="btn btn-primary btn-sm">Ver QR / Descargar PDF</button>
+                            </div>
+                        </li>
+                    </ul>
+                    <p v-else class="text-gray-600">No has adquirido ninguna entrada aún.</p>
+                </div>
+
+                <!-- Modal para mostrar el QR del ticket -->
+                <div v-if="showQrCodeModal" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                    <div class="card w-full max-w-md text-center">
+                        <h2 class="text-2xl font-semibold mb-4">Tu Código QR del Ticket</h2>
+                        <p class="text-gray-700 mb-4">Presenta este código al ingresar al evento.</p>
+                        <img :src="'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + currentTicketQrCode" alt="QR Code" class="mx-auto my-4 w-48 h-48 border border-gray-300 rounded-lg p-2">
+                        <p class="text-sm text-gray-500 break-all">{{ currentTicketQrCode }}</p>
+                        <div class="mt-6 flex justify-center gap-4">
+                            <button @click="viewTicketPdf(currentTicketQrCode)" class="btn btn-primary">Descargar PDF</button>
+                            <button @click="showQrCodeModal = false" class="btn btn-secondary">Cerrar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal para escanear código QR (Secretaria) -->
+                <div v-if="showQrScannerModal" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50">
+                    <div class="card w-full max-w-lg">
+                        <h2 class="text-2xl font-semibold text-center mb-6">Escanear Código QR del Ticket</h2>
+                        <div id="qr-reader" class="mb-4"></div>
+                        <p v-if="qrScanResult" class="text-center text-lg font-bold mt-4" :class="{'text-green-600': qrScanResult.includes('exitosamente'), 'text-red-600': qrScanResult.includes('Error') || qrScanResult.includes('usado')}">{{ qrScanResult }}</p>
+                        <p v-if="qrScanError" class="text-red-500 text-center mt-2">{{ qrScanError }}</p>
+                        <button @click="closeQrScannerModal" class="btn btn-secondary w-full mt-4">Cerrar Escáner</button>
+                    </div>
+                </div>
+
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Vue.js CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Axios CDN para solicitudes HTTP -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <!-- html5-qrcode CDN para el escáner de QR -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/dist/html5-qrcode.min.js"></script>
+
+    <script>
+        const { createApp, ref, onMounted, computed } = Vue;
+
+        createApp({
+            setup() {
+                const isAuthenticated = ref(false);
+                const user = ref(null);
+                const token = ref(localStorage.getItem('authToken') || null);
+
+                const loginForm = ref({ correo: '', contrasena: '' });
+                const loginError = ref('');
+                const showRegister = ref(false);
+                const registerForm = ref({ nombre: '', correo: '', contrasena: '', rol: '' });
+                const registerError = ref('');
+
+                const events = ref([]);
+                const eventForm = ref({ nombre: '', fecha: '', hora: '', ubicacion: '', descripcion: '', estado: 'pendiente', imagenes: '' });
+                const eventError = ref('');
+                const showCreateEvent = ref(false);
+                const showEditEvent = ref(false);
+                const currentEvent = ref(null);
+
+                const showTicketForm = ref(false);
+                const ticketForm = ref({ tipo: '', precio: 0 });
+                const ticketError = ref('');
+
+                const showAttendeesModal = ref(false);
+                const currentAttendees = ref([]);
+
+                const secretariaIdToAssign = ref('');
+                const secretariaIdToUnassign = ref('');
+                const secretariaAssignError = ref('');
+                const secretariaUnassignError = ref('');
+                const assignedSecretarias = ref([]);
+                const organizerIdToManage = ref(''); // Nuevo ref para el ID del organizador a gestionar
+                const organizerIdError = ref('');
+
+                // Nuevos refs para la gestión de organizadores
+                const organizers = ref([]);
+                const showCreateOrganizer = ref(false);
+                const showEditOrganizer = ref(false);
+                const currentOrganizer = ref(null);
+                const organizerForm = ref({ nombre: '', correo: '', contrasena: '', rol: 'Organizador' }); // Rol fijo
+                const organizerError = ref('');
+
+                // Nuevos refs para la gestión de secretarias (CRUD de usuarios secretaria)
+                const secretaries = ref([]);
+                const showCreateSecretaria = ref(false);
+                const showEditSecretaria = ref(false);
+                const currentSecretaria = ref(null);
+                const secretariaForm = ref({ nombre: '', correo: '', contrasena: '', rol: 'Secretaria' }); // Rol fijo
+                const secretariaCrudError = ref('');
+
+                // Nuevos refs para la gestión de asistentes (CRUD de usuarios asistente)
+                const attendees = ref([]);
+                const showCreateAttendee = ref(false); // Para el CRUD de asistentes (Administrador)
+                const showEditAttendee = ref(false);
+                const currentAttendee = ref(null);
+                const attendeeForm = ref({ nombre: '', correo: '', contrasena: '', rol: 'Asistente' }); // Rol fijo
+                const attendeeCrudError = ref('');
+
+                // Nuevo ref para el registro de asistentes por secretaria
+                const showRegisterAttendeeBySecretaria = ref(false);
+
+                // NUEVOS REFS para añadir asistente existente a evento
+                const showAddExistingAttendeeToEvent = ref(false);
+                const addExistingAttendeeForm = ref({ idEvento: '', idAsistente: '' });
+                const addExistingAttendeeError = ref('');
+
+                // NUEVOS REFS para enviar invitación
+                const showSendInvitationModal = ref(false);
+                const sendInvitationForm = ref({ idEvento: '', idAsistente: '' });
+                const sendInvitationError = ref('');
+
+                // REFS para Mis Invitaciones (Asistente)
+                const myInvitations = ref([]);
+                const invitationError = ref('');
+
+                // NUEVOS REFS para Mis Entradas (Asistente)
+                const myTickets = ref([]);
+                const showQrCodeModal = ref(false);
+                const currentTicketQrCode = ref('');
+
+                // NUEVOS REFS para Escáner QR (Secretaria)
+                const showQrScannerModal = ref(false);
+                let qrScanner = null; // Usar 'let' para reasignar la instancia
+                const qrScanResult = ref('');
+                const qrScanError = ref('');
+
+
+                // Configurar Axios para incluir el token de autorización
+                axios.interceptors.request.use(config => {
+                    if (token.value) {
+                        config.headers.Authorization = `Bearer ${token.value}`;
+                    }
+                    return config;
+                }, error => {
+                    return Promise.reject(error);
+                });
+
+                // Interceptor de respuesta para manejar 401/403 (No autorizado/Prohibido)
+                axios.interceptors.response.use(response => response, error => {
+                    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+                        console.error('Error de autenticación/autorización:', error.response.data.message);
+                        // Forzar logout si el token es inválido o no autorizado
+                        logout();
+                    }
+                    return Promise.reject(error);
+                });
+
+                const checkAuth = async () => {
+                    if (token.value) {
+                        try {
+                            const response = await axios.get('/api/usuarios/me');
+                            user.value = response.data;
+                            isAuthenticated.value = true;
+                            fetchEvents(); // Cargar eventos si está autenticado
+                            // Si es organizador, cargar sus propias secretarias por defecto
+                            if (user.value.rol === 'Organizador') {
+                                organizerIdToManage.value = user.value.idUsuario; // Establecer su propio ID
+                                fetchAssignedSecretarias(user.value.idUsuario);
+                            }
+                            // Si es administrador, no se carga por defecto, debe especificar un ID
+                            else if (user.value.rol === 'Administrador') {
+                                // Limpiar secretarias asignadas si cambia de rol o al iniciar como admin
+                                assignedSecretarias.value = [];
+                                fetchOrganizers(); // Cargar organizadores si es administrador
+                                fetchSecretaries(); // Cargar secretarias si es administrador
+                                fetchAttendees(); // Cargar asistentes si es administrador
+                            }
+                             // Si es secretaria, cargar la lista de secretarias para el selector (aunque no sea para CRUD)
+                            if (user.value.rol === 'Secretaria' || user.value.rol === 'Administrador') {
+                                fetchSecretaries(); // Necesario para el selector de asignación
+                            }
+                            // Solo cargar asistentes si el rol es Secretaria o Administrador
+                            if (user.value.rol === 'Secretaria' || user.value.rol === 'Administrador') {
+                                fetchAttendees(); // Necesario para el selector de asistentes
+                            }
+                            // Cargar eventos si es secretaria o asistente
+                            if (user.value.rol === 'Secretaria' || user.value.rol === 'Asistente') {
+                                fetchEvents(); // Necesario para el selector de eventos
+                            }
+                            // Si es asistente, cargar sus invitaciones y tickets
+                            if (user.value.rol === 'Asistente') {
+                                fetchMyInvitations();
+                                fetchMyTickets(); // NUEVO: Cargar tickets del asistente
+                            }
+
+                        } catch (error) {
+                            console.error('Error al verificar autenticación:', error);
+                            logout(); // Si el token es inválido, cerrar sesión
+                        }
+                    } else {
+                        isAuthenticated.value = false;
+                        user.value = null;
+                    }
+                };
+
+                const login = async () => {
+                    try {
+                        const response = await axios.post('/api/usuarios/login', loginForm.value);
+                        token.value = response.data.access_token;
+                        localStorage.setItem('authToken', token.value);
+                        loginError.value = '';
+                        await checkAuth(); // Re-verificar autenticación para obtener datos de usuario
+                    } catch (error) {
+                        console.error('Error de login:', error.response ? error.response.data : error.message);
+                        loginError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al iniciar sesión. Verifica tus credenciales.';
+                    }
+                };
+
+                const logout = () => {
+                    axios.post('/api/usuarios/logout').finally(() => { // Intentar logout en el backend también
+                        token.value = null;
+                        localStorage.removeItem('authToken');
+                        isAuthenticated.value = false;
+                        user.value = null;
+                        events.value = []; // Limpiar eventos al cerrar sesión
+                        assignedSecretarias.value = []; // Limpiar secretarias
+                        organizers.value = []; // Limpiar organizadores
+                        secretaries.value = []; // Limpiar secretarias (CRUD)
+                        attendees.value = []; // Limpiar asistentes (CRUD)
+                        myInvitations.value = []; // Limpiar invitaciones del asistente
+                        myTickets.value = []; // Limpiar tickets del asistente
+                    });
+                };
+
+                const register = async () => {
+                    try {
+                        await axios.post('/api/usuarios', registerForm.value);
+                        registerError.value = '';
+                        showRegister.value = false;
+                        alert('¡Registro exitoso! Ahora puedes iniciar sesión.');
+                        // Limpiar formulario de registro
+                        registerForm.value = { nombre: '', correo: '', contrasena: '', rol: '' };
+                    } catch (error) {
+                        console.error('Error de registro:', error.response ? error.response.data : error.message);
+                        registerError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al registrar. Inténtalo de nuevo.';
+                    }
+                };
+
+                const fetchEvents = async () => {
+                    try {
+                        const response = await axios.get('/api/eventos');
+                        events.value = response.data;
+                    } catch (error) {
+                        console.error('Error al obtener eventos:', error.response ? error.response.data : error.message);
+                        // Manejar errores de autorización o de servidor
+                    }
+                };
+
+                const createEvent = async () => {
+                    try {
+                        const imagesArray = eventForm.value.imagenes ? eventForm.value.imagenes.split(',').map(url => url.trim()) : [];
+                        
+                        // Asegurarse de que la hora tenga el formato HH:MM:SS
+                        let formattedHoraCreate = eventForm.value.hora;
+                        if (formattedHoraCreate && formattedHoraCreate.length === 5) { // Si es HH:MM
+                            formattedHoraCreate += ':00'; // Añadir segundos
+                        }
+
+                        const newEventData = {
+                            ...eventForm.value,
+                            hora: formattedHoraCreate, // Usar la hora formateada
+                            imagenes: imagesArray,
+                            idOrganizador: user.value.idUsuario // Asignar el ID del organizador autenticado
+                        };
+                        const response = await axios.post('/api/eventos', newEventData);
+                        events.value.push(response.data);
+                        showCreateEvent.value = false;
+                        eventForm.value = { nombre: '', fecha: '', hora: '', ubicacion: '', descripcion: '', estado: 'pendiente', imagenes: '' };
+                        eventError.value = '';
+                        alert('Evento creado exitosamente!');
+                    } catch (error) {
+                        console.error('Error al crear evento:', error.response ? error.response.data : error.message);
+                        eventError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al crear evento.';
+                    }
+                };
+
+                const editEvent = (event) => {
+                    // Asegurarse de que la hora tenga el formato HH:MM para el input type="time"
+                    let displayHora = event.hora;
+                    if (displayHora && displayHora.length === 8) { // Si es HH:MM:SS
+                        displayHora = displayHora.substring(0, 5); // Recortar a HH:MM
+                    }
+                    currentEvent.value = { ...event, imagenes: event.imagenes ? event.imagenes.join(', ') : '', hora: displayHora };
+                    showEditEvent.value = true;
+                };
+
+                const saveEventEdit = async () => {
+                    try {
+                        const imagesArray = currentEvent.value.imagenes ? currentEvent.value.imagenes.split(',').map(url => url.trim()) : [];
+                        
+                        // Asegurarse de que la hora tenga el formato HH:MM:SS
+                        let formattedHoraEdit = currentEvent.value.hora;
+                        if (formattedHoraEdit && formattedHoraEdit.length === 5) { // Si es HH:MM
+                            formattedHoraEdit += ':00'; // Añadir segundos
+                        }
+
+                        const updatedEventData = {
+                            ...currentEvent.value,
+                            hora: formattedHoraEdit, // Usar la hora formateada
+                            imagenes: imagesArray
+                        };
+                        const response = await axios.put(`/api/eventos/${currentEvent.value.idEvento}`, updatedEventData);
+                        // Actualizar el evento en la lista local
+                        const index = events.value.findIndex(e => e.idEvento === response.data.idEvento);
+                        if (index !== -1) {
+                            events.value[index] = response.data;
+                        }
+                        showEditEvent.value = false;
+                        alert('Evento actualizado exitosamente!');
+                    } catch (error) {
+                        console.error('Error al actualizar evento:', error.response ? error.response.data : error.message);
+                        eventError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al actualizar evento.';
+                    }
+                };
+
+                const deleteEvent = async (id) => {
+                    if (confirm('¿Estás seguro de que quieres eliminar este evento?')) {
+                        try {
+                            await axios.delete(`/api/eventos/${id}`);
+                            events.value = events.value.filter(event => event.idEvento !== id);
+                            alert('Evento eliminado exitosamente!');
+                        } catch (error) {
+                            console.error('Error al eliminar evento:', error.response ? error.response.data : error.message);
+                            alert('Error al eliminar evento: ' + (error.response && error.response.data && error.response.data.message ? error.response.data.message : error.message));
+                        }
+                    }
+                };
+
+                const updateEventStatus = async (id, action) => {
+                    try {
+                        // El action que viene del frontend es 'publicar', 'ocultar', 'cancelar'
+                        const response = await axios.post(`/api/eventos/${id}/${action}`);
+                        // Actualizar el estado del evento en la lista local
+                        const index = events.value.findIndex(e => e.idEvento === response.data.evento.idEvento);
+                        if (index !== -1) {
+                            events.value[index].estado = response.data.evento.estado;
+                        }
+                        alert(`Evento ${action} exitosamente!`);
+                    } catch (error) {
+                        console.error(`Error al ${action} evento:`, error.response ? error.response.data : error.message);
+                        alert(`Error al ${action} evento: ` + (error.response && error.response.data && error.response.data.message ? error.response.data.message : error.message));
+                    }
+                };
+
+                const showBuyTicketForm = (event) => {
+                    currentEvent.value = event;
+                    ticketForm.value.precio = event.precio || 0; // Puedes establecer un precio predeterminado si el evento tiene uno
+                    showTicketForm.value = true;
+                };
+
+                const buyTicket = async () => {
+                    try {
+                        const ticketData = {
+                            idEvento: currentEvent.value.idEvento,
+                            idAsistente: user.value.idUsuario, // El usuario autenticado es el comprador
+                            tipo: ticketForm.value.tipo,
+                            precio: ticketForm.value.precio
+                        };
+                        const response = await axios.post('/api/tickets', ticketData);
+                        alert('Ticket comprado exitosamente!');
+                        showTicketForm.value = false;
+                        ticketForm.value = { tipo: '', precio: 0 };
+                        ticketError.value = '';
+                        if (user.value.rol === 'Asistente') {
+                            fetchMyTickets(); // Refrescar la lista de tickets del asistente
+                        }
+                    } catch (error) {
+                        console.error('Error al comprar ticket:', error.response ? error.response.data : error.message);
+                        ticketError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al comprar ticket.';
+                    }
+                };
+
+                const viewEventAttendees = async (idEvento) => {
+                    try {
+                        const response = await axios.get(`/api/eventos/${idEvento}/asistentes`);
+                        currentAttendees.value = response.data;
+                        currentEvent.value = events.value.find(e => e.idEvento === idEvento); // Para mostrar el nombre del evento
+                        showAttendeesModal.value = true;
+                    } catch (error) {
+                        console.error('Error al obtener asistentes:', error.response ? error.response.data : error.message);
+                        alert('Error al obtener asistentes: ' + (error.response && error.response.data && error.response.data.message ? error.response.data.message : error.message));
+                    }
+                };
+
+                // Nuevo método para confirmar asistencia
+                const confirmAttendance = async (idEvento, idAsistente) => {
+                    if (confirm('¿Estás seguro de que quieres confirmar la asistencia de este usuario?')) {
+                        try {
+                            const response = await axios.post(`/api/eventos/${idEvento}/asistentes/${idAsistente}/confirm`);
+                            alert('Asistencia confirmada exitosamente!');
+                            // Actualizar el estado del asistente en la lista local sin recargar todo
+                            const eventIndex = events.value.findIndex(e => e.idEvento === idEvento);
+                            if (eventIndex !== -1) {
+                                // Buscar el asistente en la lista de asistentes del evento
+                                const eventAttendees = events.value[eventIndex].asistentes;
+                                const attendeeInEventIndex = eventAttendees.findIndex(a => a.idUsuario === idAsistente);
+                                if (attendeeInEventIndex !== -1) {
+                                    // Actualizar el pivot de confirmacionAsistencia
+                                    eventAttendees[attendeeInEventIndex].pivot.confirmacionAsistencia = true;
+                                }
+                            }
+                            // También actualizar la lista en el modal si está abierto
+                            const currentAttendeeIndex = currentAttendees.value.findIndex(a => a.idUsuario === idAsistente);
+                            if (currentAttendeeIndex !== -1) {
+                                currentAttendees.value[currentAttendeeIndex].pivot.confirmacionAsistencia = true;
+                            }
+
+                        } catch (error) {
+                            console.error('Error al confirmar asistencia:', error.response ? error.response.data : error.message);
+                            alert('Error al confirmar asistencia: ' + (error.response && error.response.data && error.response.data.message ? error.response.data.message : error.message));
+                        }
+                    }
+                };
+
+                const fetchAssignedSecretarias = async (organizadorId) => {
+                    organizerIdError.value = '';
+                    if (!organizadorId) {
+                        assignedSecretarias.value = []; // Limpiar si no hay ID
+                        if (user.value.rol === 'Administrador') { // Solo mostrar error si es admin y no ha puesto ID
+                            organizerIdError.value = 'Introduce el ID del organizador para ver sus secretarias.';
+                        }
+                        return;
+                    }
+                    try {
+                        const response = await axios.get(`/api/organizadores/${organizadorId}/secretarias`);
+                        assignedSecretarias.value = response.data;
+                    } catch (error) {
+                        console.error('Error al obtener secretarias asignadas:', error.response ? error.response.data : error.message);
+                        organizerIdError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al obtener secretarias.';
+                        assignedSecretarias.value = [];
+                    }
+                };
+
+                const assignSecretaria = async () => {
+                    secretariaAssignError.value = '';
+                    const targetOrganizerId = user.value.rol === 'Administrador' ? organizerIdToManage.value : user.value.idUsuario;
+
+                    if (!targetOrganizerId) {
+                        secretariaAssignError.value = 'Por favor, selecciona un organizador primero.';
+                        return;
+                    }
+                    if (!secretariaIdToAssign.value) {
+                        secretariaAssignError.value = 'Por favor, selecciona una secretaria de la lista.';
+                        return;
+                    }
+                    try {
+                        await axios.post(`/api/organizadores/${targetOrganizerId}/secretarias/assign`, {
+                            idSecretaria: secretariaIdToAssign.value
+                        });
+                        alert('Secretaria asignada exitosamente!');
+                        secretariaIdToAssign.value = '';
+                        fetchAssignedSecretarias(targetOrganizerId); // Refrescar lista
+                    } catch (error) {
+                        console.error('Error al asignar secretaria:', error.response ? error.response.data : error.message);
+                        secretariaAssignError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al asignar secretaria.';
+                    }
+                };
+
+                const unassignSecretaria = async () => {
+                    secretariaUnassignError.value = '';
+                    const targetOrganizerId = user.value.rol === 'Administrador' ? organizerIdToManage.value : user.value.idUsuario;
+
+                    if (!targetOrganizerId) {
+                        secretariaUnassignError.value = 'Por favor, selecciona un organizador primero.';
+                        return;
+                    }
+                    if (!secretariaIdToUnassign.value) {
+                        secretariaIdToUnassign.value = 'Por favor, introduce un ID de secretaria.'; // Este campo sigue siendo manual
+                        return;
+                    }
+                    try {
+                        await axios.post(`/api/organizadores/${targetOrganizerId}/secretarias/unassign`, {
+                            idSecretaria: secretariaIdToUnassign.value
+                        });
+                        alert('Secretaria desasignada exitosamente!');
+                        secretariaIdToUnassign.value = '';
+                        fetchAssignedSecretarias(targetOrganizerId); // Refrescar lista
+                    } catch (error) {
+                        console.error('Error al desasignar secretaria:', error.response ? error.response.data : error.message);
+                        secretariaUnassignError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al desasignar secretaria.';
+                    }
+                };
+
+                // Funciones CRUD para Organizadores
+                const fetchOrganizers = async () => {
+                    try {
+                        const response = await axios.get('/api/usuarios'); // Obtener todos los usuarios
+                        organizers.value = response.data.filter(u => u.rol === 'Organizador'); // Filtrar por rol 'Organizador'
+                    } catch (error) {
+                        console.error('Error al obtener organizadores:', error.response ? error.response.data : error.message);
+                        organizerError.value = 'Error al cargar la lista de organizadores.';
+                    }
+                };
+
+                const createOrganizer = async () => {
+                    try {
+                        // El rol ya está fijado en organizerForm.rol = 'Organizador'
+                        const response = await axios.post('/api/usuarios', organizerForm.value);
+                        organizers.value.push(response.data);
+                        showCreateOrganizer.value = false;
+                        organizerForm.value = { nombre: '', correo: '', contrasena: '', rol: 'Organizador' }; // Resetear
+                        organizerError.value = '';
+                        alert('Organizador creado exitosamente!');
+                    } catch (error) {
+                        console.error('Error al crear organizador:', error.response ? error.response.data : error.message);
+                        organizerError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al crear organizador.';
+                    }
+                };
+
+                const editOrganizer = (organizer) => {
+                    currentOrganizer.value = { ...organizer, contrasena: '' }; // No precargar la contraseña
+                    showEditOrganizer.value = true;
+                };
+
+                const saveOrganizerEdit = async () => {
+                    try {
+                        const dataToUpdate = { ...currentOrganizer.value };
+                        // No enviar la contraseña si está vacía
+                        if (!dataToUpdate.contrasena) {
+                            delete dataToUpdate.contrasena;
+                        }
+                        const response = await axios.put(`/api/usuarios/${currentOrganizer.value.idUsuario}`, dataToUpdate);
+                        const index = organizers.value.findIndex(o => o.idUsuario === response.data.idUsuario);
+                        if (index !== -1) {
+                            organizers.value[index] = response.data;
+                        }
+                        showEditOrganizer.value = false;
+                        organizerError.value = '';
+                        alert('Organizador actualizado exitosamente!');
+                    } catch (error) {
+                        console.error('Error al actualizar organizador:', error.response ? error.response.data : error.message);
+                        organizerError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al actualizar organizador.';
+                    }
+                };
+
+                const deleteOrganizer = async (id) => {
+                    if (confirm('¿Estás seguro de que quieres eliminar este organizador? Esto eliminará también sus eventos, invitaciones y tickets asociados.')) {
+                        try {
+                            await axios.delete(`/api/usuarios/${id}`);
+                            organizers.value = organizers.value.filter(o => o.idUsuario !== id);
+                            alert('Organizador eliminado exitosamente!');
+                        } catch (error) {
+                            console.error('Error al eliminar organizador:', error.response ? error.response.data : error.message);
+                            alert('Error al eliminar organizador: ' + (error.response && error.response.data && error.response.data.message ? error.response.data.message : error.message));
+                        }
+                    }
+                };
+
+                // Funciones CRUD para Secretarias (Usuarios)
+                const fetchSecretaries = async () => {
+                    try {
+                        const response = await axios.get('/api/usuarios'); // Obtener todos los usuarios
+                        secretaries.value = response.data.filter(u => u.rol === 'Secretaria'); // Filtrar por rol 'Secretaria'
+                    } catch (error) {
+                        console.error('Error al obtener secretarias:', error.response ? error.response.data : error.message);
+                        secretariaCrudError.value = 'Error al cargar la lista de secretarias.';
+                    }
+                };
+
+                const createSecretaria = async () => {
+                    try {
+                        // El rol ya está fijado en secretariaForm.rol = 'Secretaria'
+                        const response = await axios.post('/api/usuarios', secretariaForm.value);
+                        secretaries.value.push(response.data);
+                        showCreateSecretaria.value = false;
+                        secretariaForm.value = { nombre: '', correo: '', contrasena: '', rol: 'Secretaria' }; // Resetear
+                        secretariaCrudError.value = '';
+                        alert('Secretaria creada exitosamente!');
+                    } catch (error) {
+                        console.error('Error al crear secretaria:', error.response ? error.response.data : error.message);
+                        secretariaCrudError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al crear secretaria.';
+                    }
+                };
+
+                const editSecretaria = (secretaria) => {
+                    currentSecretaria.value = { ...secretaria, contrasena: '' }; // No precargar la contraseña
+                    showEditSecretaria.value = true;
+                };
+
+                const saveSecretariaEdit = async () => {
+                    try {
+                        const dataToUpdate = { ...currentSecretaria.value };
+                        // No enviar la contraseña si está vacía
+                        if (!dataToUpdate.contrasena) {
+                            delete dataToUpdate.contrasena;
+                        }
+                        const response = await axios.put(`/api/usuarios/${currentSecretaria.value.idUsuario}`, dataToUpdate);
+                        const index = secretaries.value.findIndex(s => s.idUsuario === response.data.idUsuario);
+                        if (index !== -1) {
+                            secretaries.value[index] = response.data;
+                        }
+                        showEditSecretaria.value = false;
+                        secretariaCrudError.value = '';
+                        alert('Secretaria actualizada exitosamente!');
+                    } catch (error) {
+                        console.error('Error al actualizar secretaria:', error.response ? error.response.data : error.message);
+                        secretariaCrudError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al actualizar secretaria.';
+                    }
+                };
+
+                const deleteSecretaria = async (id) => {
+                    if (confirm('¿Estás seguro de que quieres eliminar esta secretaria?')) {
+                        try {
+                            await axios.delete(`/api/usuarios/${id}`);
+                            secretaries.value = secretaries.value.filter(s => s.idUsuario !== id);
+                            alert('Secretaria eliminada exitosamente!');
+                        } catch (error) {
+                            console.error('Error al eliminar secretaria:', error.response ? error.response.data : error.message);
+                            alert('Error al eliminar secretaria: ' + (error.response && error.response.data && error.response.data.message ? error.response.data.message : error.message));
+                        }
+                    }
+                };
+
+                // Funciones CRUD para Asistentes (Usuarios)
+                const fetchAttendees = async () => {
+                    try {
+                        const response = await axios.get('/api/usuarios'); // Obtener todos los usuarios
+                        attendees.value = response.data.filter(u => u.rol === 'Asistente'); // Filtrar por rol 'Asistente'
+                    } catch (error) {
+                        console.error('Error al obtener asistentes:', error.response ? error.response.data : error.message);
+                        attendeeCrudError.value = 'Error al cargar la lista de asistentes.';
+                    }
+                };
+
+                const createAttendee = async () => { // Para el CRUD de asistentes (Administrador)
+                    try {
+                        // El rol ya está fijado en attendeeForm.rol = 'Asistente'
+                        const response = await axios.post('/api/usuarios', attendeeForm.value);
+                        attendees.value.push(response.data);
+                        showCreateAttendee.value = false;
+                        attendeeForm.value = { nombre: '', correo: '', contrasena: '', rol: 'Asistente' }; // Resetear
+                        attendeeCrudError.value = '';
+                        alert('Asistente creado exitosamente!');
+                    } catch (error) {
+                        console.error('Error al crear asistente:', error.response ? error.response.data : error.message);
+                        attendeeCrudError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al crear asistente.';
+                    }
+                };
+
+                // Nuevo método para que la secretaria registre asistentes
+                const createAttendeeBySecretaria = async () => {
+                    try {
+                        // El rol ya está fijado en attendeeForm.rol = 'Asistente'
+                        const response = await axios.post('/api/usuarios', { ...attendeeForm.value, rol: 'Asistente' });
+                        // No es necesario añadirlo a la lista de 'attendees' del administrador aquí
+                        showRegisterAttendeeBySecretaria.value = false;
+                        attendeeForm.value = { nombre: '', correo: '', contrasena: '', rol: 'Asistente' }; // Resetear
+                        attendeeCrudError.value = ''; // Limpiar cualquier error anterior
+                        alert('Asistente registrado exitosamente por la secretaria!');
+                    } catch (error) {
+                        console.error('Error al registrar asistente por secretaria:', error.response ? error.response.data : error.message);
+                        attendeeCrudError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al registrar asistente.';
+                    }
+                };
+
+
+                const editAttendee = (attendee) => {
+                    currentAttendee.value = { ...attendee, contrasena: '' }; // No precargar la contraseña
+                    showEditAttendee.value = true;
+                };
+
+                const saveAttendeeEdit = async () => {
+                    try {
+                        const dataToUpdate = { ...currentAttendee.value };
+                        // No enviar la contraseña si está vacía
+                        if (!dataToUpdate.contrasena) {
+                            delete dataToUpdate.contrasena;
+                        }
+                        const response = await axios.put(`/api/usuarios/${currentAttendee.value.idUsuario}`, dataToUpdate);
+                        const index = attendees.value.findIndex(a => a.idUsuario === response.data.idUsuario);
+                        if (index !== -1) {
+                            attendees.value[index] = response.data;
+                        }
+                        showEditAttendee.value = false;
+                        attendeeCrudError.value = '';
+                        alert('Asistente actualizado exitosamente!');
+                    } catch (error) {
+                        console.error('Error al actualizar asistente:', error.response ? error.response.data : error.message);
+                        attendeeCrudError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al actualizar asistente.';
+                    }
+                };
+
+                const deleteAttendee = async (id) => {
+                    if (confirm('¿Estás seguro de que quieres eliminar este asistente?')) {
+                        try {
+                            await axios.delete(`/api/usuarios/${id}`);
+                            attendees.value = attendees.value.filter(a => a.idUsuario !== id);
+                            alert('Asistente eliminado exitosamente!');
+                        } catch (error) {
+                            console.error('Error al eliminar asistente:', error.response ? error.response.data : error.message);
+                            alert('Error al eliminar asistente: ' + (error.response && error.response.data && error.response.data.message ? error.response.data.message : error.message));
+                        }
+                    }
+                };
+
+                // NUEVOS MÉTODOS para añadir asistente existente a evento
+                const openAddExistingAttendeeModal = () => {
+                    addExistingAttendeeForm.value = { idEvento: '', idAsistente: '' };
+                    addExistingAttendeeError.value = '';
+                    showAddExistingAttendeeToEvent.value = true;
+                };
+
+                const addExistingAttendeeToEvent = async () => {
+                    addExistingAttendeeError.value = '';
+                    try {
+                        const response = await axios.post(`/api/eventos/${addExistingAttendeeForm.value.idEvento}/add-attendee`, {
+                            idAsistente: addExistingAttendeeForm.value.idAsistente
+                        });
+                        alert('Asistente añadido al evento exitosamente!');
+                        showAddExistingAttendeeToEvent.value = false;
+                        // Opcionalmente, refrescar la lista de asistentes para el evento si el modal de asistentes está abierto
+                        // O simplemente volver a cargar todos los eventos para actualizar los recuentos si es necesario.
+                        fetchEvents(); // Recargar eventos para mostrar posibles conteos de asistentes actualizados
+                    } catch (error) {
+                        console.error('Error al añadir asistente al evento:', error.response ? error.response.data : error.message);
+                        addExistingAttendeeError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al añadir asistente al evento.';
+                    }
+                };
+
+                // NUEVOS MÉTODOS para enviar invitación
+                const openSendInvitationModal = () => {
+                    sendInvitationForm.value = { idEvento: '', idAsistente: '' };
+                    sendInvitationError.value = '';
+                    showSendInvitationModal.value = true;
+                };
+
+                const sendInvitation = async () => {
+                    sendInvitationError.value = '';
+                    try {
+                        const response = await axios.post('/api/invitaciones/send', sendInvitationForm.value);
+                        alert('Invitación enviada exitosamente!');
+                        showSendInvitationModal.value = false;
+                        // Si el usuario es asistente, refrescar sus invitaciones
+                        if (user.value.rol === 'Asistente') {
+                            fetchMyInvitations();
+                        }
+                    }
+                    catch (error) {
+                        console.error('Error al enviar invitación:', error.response ? error.response.data : error.message);
+                        sendInvitationError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al enviar invitación.';
+                    }
+                };
+
+                // MÉTODOS para Mis Invitaciones (Asistente)
+                const fetchMyInvitations = async () => {
+                    invitationError.value = '';
+                    try {
+                        const response = await axios.get('/api/invitaciones/me');
+                        myInvitations.value = response.data;
+                    } catch (error) {
+                        console.error('Error al obtener mis invitaciones:', error.response ? error.response.data : error.message);
+                        invitationError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al cargar tus invitaciones.';
+                    }
+                };
+
+                const updateInvitationStatus = async (invitationId, status) => {
+                    invitationError.value = '';
+                    try {
+                        const response = await axios.put(`/api/invitaciones/${invitationId}/actualizar-rsvp`, { estadoRSVP: status });
+                        alert(`Invitación ${status === 'aceptado' ? 'aceptada' : 'rechazada'} exitosamente!`);
+                        // Actualizar la invitación en la lista local
+                        const index = myInvitations.value.findIndex(inv => inv.idInvitacion === invitationId);
+                        if (index !== -1) {
+                            myInvitations.value[index].estadoRSVP = status;
+                        }
+                    } catch (error) {
+                        console.error('Error al actualizar invitación:', error.response ? error.response.data : error.message);
+                        invitationError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : `Error al ${status === 'aceptado' ? 'aceptar' : 'rechazar'} la invitación.`;
+                    }
+                };
+
+                const acceptInvitation = (invitationId) => {
+                    if (confirm('¿Estás seguro de que quieres aceptar esta invitación?')) {
+                        updateInvitationStatus(invitationId, 'aceptado');
+                    }
+                };
+
+                const rejectInvitation = (invitationId) => {
+                    if (confirm('¿Estás seguro de que quieres rechazar esta invitación?')) {
+                        updateInvitationStatus(invitationId, 'rechazado');
+                    }
+                };
+
+                // NUEVOS MÉTODOS para Mis Entradas (Asistente)
+                const fetchMyTickets = async () => {
+                    ticketError.value = '';
+                    try {
+                        const response = await axios.get('/api/tickets/me');
+                        myTickets.value = response.data;
+                    } catch (error) {
+                        console.error('Error al obtener mis tickets:', error.response ? error.response.data : error.message);
+                        ticketError.value = error.response && error.response.data && error.response.data.message
+                            ? error.response.data.message
+                            : 'Error al cargar tus tickets.';
+                    }
+                };
+
+                const openQrCodeModal = (codigoQR) => {
+                    currentTicketQrCode.value = codigoQR;
+                    showQrCodeModal.value = true;
+                };
+
+                const viewTicketPdf = async (codigoQR) => {
+                    try {
+                        // Realizar la solicitud Axios para obtener el PDF como un blob
+                        const response = await axios.get(`/api/tickets/pdf/${codigoQR}`, {
+                            responseType: 'blob' // Importante: solicitar la respuesta como un blob
+                        });
+
+                        // Obtener el nombre del archivo del encabezado Content-Disposition si está disponible
+                        const contentDisposition = response.headers['content-disposition'];
+                        let filename = `ticket_${codigoQR}.pdf`;
+                        if (contentDisposition) {
+                            const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+                            if (filenameMatch && filenameMatch[1]) {
+                                filename = filenameMatch[1];
+                            }
+                        }
+
+                        // Crear una URL para el blob
+                        const fileURL = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+                        
+                        // Crear un enlace temporal y hacer clic en él para descargar el archivo
+                        const fileLink = document.createElement('a');
+                        fileLink.href = fileURL;
+                        fileLink.setAttribute('download', filename); // Usar el nombre de archivo obtenido o el predeterminado
+                        document.body.appendChild(fileLink);
+                        fileLink.click();
+                        document.body.removeChild(fileLink); // Limpiar el enlace
+                        window.URL.revokeObjectURL(fileURL); // Liberar la URL del blob
+
+                    } catch (error) {
+                        console.error('Error al generar PDF del ticket:', error.response ? error.response.data : error.message);
+                        alert('Error al generar PDF del ticket: ' + (error.response && error.response.data && error.response.data.message ? error.response.data.message : error.message));
+                    }
+                };
+
+                // NUEVOS MÉTODOS para Escáner QR (Secretaria)
+                const openQrScannerModal = () => {
+                    qrScanResult.value = '';
+                    qrScanError.value = '';
+                    showQrScannerModal.value = true;
+                    // Retrasar el inicio del escáner para asegurar que el modal esté visible
+                    setTimeout(() => {
+                        startQrScanner();
+                    }, 500);
+                };
+
+                const startQrScanner = () => {
+                    if (!qrScanner) {
+                        qrScanner = new Html5QrcodeScanner(
+                            "qr-reader",
+                            { fps: 10, qrbox: { width: 250, height: 250 } },
+                            /* verbose= */ false
+                        );
+                    }
+                    qrScanner.render(onScanSuccess, onScanError);
+                };
+
+                const stopQrScanner = async () => {
+                    if (qrScanner && qrScanner.is ) { // Check if scanner is running
+                        try {
+                            await qrScanner.stop();
+                            console.log("QR scanner stopped.");
+                        } catch (err) {
+                            console.error("Error stopping QR scanner:", err);
+                        }
+                    }
+                    qrScanner = null; // Limpiar la instancia
+                };
+
+                const closeQrScannerModal = async () => {
+                    await stopQrScanner();
+                    showQrScannerModal.value = false;
+                };
+
+                const onScanSuccess = async (decodedText, decodedResult) => {
+                    console.log(`QR Code scanned: ${decodedText}`);
+                    qrScanResult.value = 'Escaneando...'; // Mensaje temporal
+                    qrScanError.value = ''; // Limpiar errores anteriores
+                    await stopQrScanner(); // Detener el escáner después de un escaneo exitoso
+                    await validateScannedQrCode(decodedText); // Enviar al backend para validación
+                };
+
+                const onScanError = (errorMessage) => {
+                    // console.warn(`QR Scan Error: ${errorMessage}`);
+                    // qrScanError.value = `Error de escaneo: ${errorMessage}`; // No mostrar errores constantes
+                };
+
+                const validateScannedQrCode = async (codigoQR) => {
+                    try {
+                        const response = await axios.post('/api/tickets/validate-qr', { codigoQR: codigoQR });
+                        qrScanResult.value = response.data.message;
+                        // Opcional: Refrescar la lista de asistentes del evento si el modal de asistentes está abierto
+                        if (showAttendeesModal.value && currentEvent.value) {
+                            viewEventAttendees(currentEvent.value.idEvento);
+                        }
+                        // También refrescar los tickets del asistente si es el caso (aunque el escáner es para secretaria)
+                        if (user.value.rol === 'Asistente') {
+                             fetchMyTickets();
+                        }
+
+                    } catch (error) {
+                        console.error('Error al validar QR:', error.response ? error.response.data : error.message);
+                        qrScanResult.value = 'Error: ' + (error.response && error.response.data && error.response.data.message ? error.response.data.message : 'Error desconocido al validar ticket.');
+                        qrScanError.value = ''; // El mensaje principal ya es el error
+                    }
+                };
+
+                // Nueva función para formatear la fecha
+                const formatDate = (dateString) => {
+                    if (!dateString) return '';
+                    // Extraer solo la parte de la fecha (YYYY-MM-DD)
+                    return dateString.split('T')[0];
+                };
+
+
+                onMounted(() => {
+                    checkAuth();
+                });
+
+                return {
+                    isAuthenticated,
+                    user,
+                    loginForm,
+                    loginError,
+                    showRegister,
+                    registerForm,
+                    registerError,
+                    events,
+                    eventForm,
+                    eventError,
+                    showCreateEvent,
+                    showEditEvent,
+                    currentEvent,
+                    showTicketForm,
+                    ticketForm,
+                    ticketError,
+                    showAttendeesModal,
+                    currentAttendees,
+                    secretariaIdToAssign,
+                    secretariaIdToUnassign,
+                    secretariaAssignError,
+                    secretariaUnassignError,
+                    assignedSecretarias,
+                    organizerIdToManage, // Exportar el nuevo ref
+                    organizerIdError,
+
+                    organizers, // Nuevo
+                    showCreateOrganizer, // Nuevo
+                    showEditOrganizer, // Nuevo
+                    currentOrganizer, // Nuevo
+                    organizerForm, // Nuevo
+                    organizerError, // Nuevo
+
+                    secretaries, // Nuevo
+                    showCreateSecretaria, // Nuevo
+                    showEditSecretaria, // Nuevo
+                    currentSecretaria, // Nuevo
+                    secretariaForm, // Nuevo
+                    secretariaCrudError, // Nuevo
+
+                    attendees, // Nuevo
+                    showCreateAttendee, // Nuevo
+                    showEditAttendee, // Nuevo
+                    currentAttendee, // Nuevo
+                    attendeeForm, // Nuevo
+                    attendeeCrudError, // Nuevo
+                    showRegisterAttendeeBySecretaria, // Nuevo
+
+                    // NUEVOS EXPORTS para añadir asistente existente a evento
+                    showAddExistingAttendeeToEvent,
+                    addExistingAttendeeForm,
+                    addExistingAttendeeError,
+                    openAddExistingAttendeeModal,
+                    addExistingAttendeeToEvent,
+
+                    // NUEVOS EXPORTS para enviar invitación
+                    showSendInvitationModal,
+                    sendInvitationForm,
+                    sendInvitationError,
+                    openSendInvitationModal,
+                    sendInvitation,
+
+                    // EXPORTS para Mis Invitaciones (Asistente)
+                    myInvitations,
+                    invitationError,
+                    fetchMyInvitations,
+                    acceptInvitation,
+                    rejectInvitation,
+
+                    // NUEVOS EXPORTS para Mis Entradas (Asistente)
+                    myTickets,
+                    showQrCodeModal,
+                    currentTicketQrCode,
+                    fetchMyTickets,
+                    openQrCodeModal,
+                    viewTicketPdf,
+
+                    // NUEVOS EXPORTS para Escáner QR (Secretaria)
+                    showQrScannerModal,
+                    qrScanResult,
+                    qrScanError,
+                    openQrScannerModal,
+                    closeQrScannerModal,
+
+
+                    login,
+                    logout,
+                    register,
+                    fetchEvents,
+                    createEvent,
+                    editEvent,
+                    saveEventEdit,
+                    deleteEvent,
+                    updateEventStatus,
+                    showBuyTicketForm,
+                    buyTicket,
+                    viewEventAttendees,
+                    confirmAttendance, // Nuevo
+                    fetchAssignedSecretarias, // Ahora puede ser llamada con un ID
+                    assignSecretaria,
+                    unassignSecretaria,
+                    formatDate, // Exportar la nueva función
+
+                    fetchOrganizers, // Nuevo
+                    createOrganizer, // Nuevo
+                    editOrganizer, // Nuevo
+                    saveOrganizerEdit, // Nuevo
+                    deleteOrganizer, // Nuevo
+
+                    fetchSecretaries, // Nuevo
+                    createSecretaria, // Nuevo
+                    editSecretaria, // Nuevo
+                    saveSecretariaEdit, // Nuevo
+                    deleteSecretaria, // Nuevo
+
+                    fetchAttendees, // Nuevo
+                    createAttendee, // Nuevo
+                    editAttendee, // Nuevo
+                    saveAttendeeEdit, // Nuevo
+                    deleteAttendee, // Nuevo
+                    createAttendeeBySecretaria, // Nuevo
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
